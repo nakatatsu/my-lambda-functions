@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  python:
+    container_name: aws-lambda-python
+    build: ./containers/aws-lambda-python3.9
+    tty: true
+    volumes:
+      - ./src:/lambda
+      - ~/.aws:/root/.aws
