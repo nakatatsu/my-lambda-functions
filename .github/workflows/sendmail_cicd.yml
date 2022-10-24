@@ -4,53 +4,58 @@ on:
   push:
     branches:
       - master
+      - feature/github-actions
   # 要件2. 指定のディレクトリの更新でのみ起動する。
     paths:
       - 'src/send_mail/*.py'
       - 'src/send_mail/*.txt'
 
-# aws cli, zip  が必要
-
 env:
-  BUCKET_NAME : "<aws-bucket-name>"
-  AWS_REGION : "<aws-region>"
+  BUCKET_NAME : "${{ secrets.BUCKET_NAME }}"
+  AWS_REGION : "ap-northeast-1"
   OS : "ubuntu-22.04"
-  AWS_ROLE_ARN: "<aws-role>"
-
-# 要件3. AWSのリソースアクセス権限を取得する（できればOpenIdConnectを用いて）。
-permissions:
-  id-token: write
-  contents: read
+  AWS_ROLE_ARN: "${{ secrets.AWS_ROLE_ARN }}"
 
 jobs:
-  check-out:
-    name: "unit test by pytest"
+  test:
     runs-on: ${{ env.OS }}
+    strategy:
+      matrix:
+        python-version: ["3.9"]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-  # 要件4. 自動テストを走らせ、もしErrorが出たら終了。
-  unit-test:
-    name: "unit test by pytest"
-    runs-on: ${{ env.OS }}
-    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: pip install pytest
-      - name: Test
-        run: pytest
-  lint:
-    name: "lint by flake8"
-    runs-on: ${{ env.OS }}
-    steps:
-      - name: Install dependencies
-        run: pip install flake8
-      - name: Test
-        run: flake8 --max-line-length 120
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          #flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          #flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 --max-line-length 120
+      - name: Test with pytest
+        run: |
+          pytest
   deploy:
-    name: "deploy to lambda"
     runs-on: ${{ env.OS }}
+    strategy:
+      matrix:
+        python-version: ["3.9"]
     steps:
+      - uses: actions/checkout@v3
+      - name: aws-credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
       # 要件5. アップロードすべきファイルをZipで圧縮し、S3にPUTする。
       # 要件6. Lambda関数にアップロードする。関数バージョンも同時に作成する。
       # 要件7. エイリアスをLATESTに更新する。
@@ -63,11 +68,10 @@ jobs:
           SLACK_COLOR: good 
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
       # 要件ex. 失敗した場合、失敗を通知する。
-
-  on-error:
-    name: Slack notification of failure
-    if: failure()
-    uses: rtCamp/action-slack-notify@v2.2.0
-    env:
-      SLACK_COLOR: danger
-      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+  # on-error:
+  #   name: Slack notification of failure
+  #   if: failure()
+  #   uses: rtCamp/action-slack-notify@v2.2.0
+  #   env:
+  #     SLACK_COLOR: danger
+  #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
