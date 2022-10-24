@@ -1,5 +1,12 @@
 name: send_mail CI/CD
 on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "environment"
+        required: true
+        default: "staging"
+      
   # 要件1. masterにプルリクがマージされると起動する。
   push:
     branches:
