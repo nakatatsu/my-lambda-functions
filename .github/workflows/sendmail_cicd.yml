@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - feature/github-actions
   # 要件2. 指定のディレクトリの更新でのみ起動する。
     paths:
       - 'src/send_mail/*.py'
