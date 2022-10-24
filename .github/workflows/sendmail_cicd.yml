@@ -67,8 +67,6 @@ jobs:
           SLACK_COLOR: good 
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
       # 要件ex. 失敗した場合、失敗を通知する。
-
-
   # on-error:
   #   name: Slack notification of failure
   #   if: failure()
