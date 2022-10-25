@@ -1,11 +1,6 @@
 name: send_mail CI/CD
 on:
   workflow_dispatch:
-    inputs:
-      env:
-        description: "environment"
-        required: true
-        default: "staging"
       
   # 要件1. masterにプルリクがマージされると起動する。
   push:
@@ -18,12 +13,11 @@ on:
       - 'src/send_mail/*.txt'
 
 env:
-  BUCKET_NAME: "${{ secrets.BUCKET_NAME }}"
   AWS_REGION: "ap-northeast-1"
   AWS_ROLE_ARN: "${{ secrets.AWS_ROLE_ARN }}"
 
 jobs:
-  test:
+  test-and-deploy:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -49,35 +43,39 @@ jobs:
       - name: Test with pytest
         run: |
           pytest
-  deploy:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python-version: ["3.9"]
-    steps:
-      - uses: actions/checkout@v3
       - name: aws-credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: set env(product)
+        if: github.ref == 'refs/heads/master'
+        env:
+          environment : product
+      - name: set env(staging)
+        if: contains(github.ref, "feature")
+        env:
+          environment : staging
       # 要件5. アップロードすべきファイルをZipで圧縮し、S3にPUTする。
       # 要件6. Lambda関数にアップロードする。関数バージョンも同時に作成する。
       # 要件7. エイリアスをLATESTに更新する。
       - name: deploy to lambda
-        run: cd src/send_mail && bash ./upload.sh product
+        run: cd src/send_mail && bash ./upload.sh ${{ env.environment }}
       # 要件8. 結果を通知する。
       - name: Slack notification of success
         uses: rtCamp/action-slack-notify@v2.2.0
         env:
           SLACK_COLOR: good 
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-      # 要件ex. 失敗した場合、失敗を通知する。
-  # on-error:
-  #   name: Slack notification of failure
-  #   if: failure()
-  #   uses: rtCamp/action-slack-notify@v2.2.0
-  #   env:
-  #     SLACK_COLOR: danger
-  #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deploy success.'
+          SLACK_TITLE: GitHub Actions Notification
+      # ※ 失敗でも通知する
+      - name: Slack notification of failure
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2.2.0
+        env:
+          SLACK_COLOR: danger
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deploy failed...'
+          SLACK_TITLE: GitHub Actions Notification
