@@ -53,7 +53,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         run: echo 'ENVIRONMENT=product' >> $GITHUB_ENV
       - name: set env(staging)
-        if: contains(github.ref, "feature")
+        if: contains(github.ref, 'feature')
         run: echo 'ENVIRONMENT=staging' >> $GITHUB_ENV
       # 要件5. アップロードすべきファイルをZipで圧縮し、S3にPUTする。
       # 要件6. Lambda関数にアップロードする。関数バージョンも同時に作成する。
