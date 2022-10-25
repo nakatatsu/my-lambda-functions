@@ -16,6 +16,11 @@ env:
   AWS_REGION: "ap-northeast-1"
   AWS_ROLE_ARN: "${{ secrets.AWS_ROLE_ARN }}"
 
+# AWS OpenID Connect用
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   test-and-deploy:
     runs-on: ubuntu-22.04
@@ -43,12 +48,18 @@ jobs:
       - name: Test with pytest
         run: |
           pytest
-      - name: aws-credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region:  ${{ env.AWS_REGION }}
+      - run: aws sts get-caller-identity
+      # アクセスキーを使うならこちら
+      # - name: aws-credentials
+      #   uses: aws-actions/configure-aws-credentials@v1
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ env.AWS_REGION }}
       - name: set env(product)
         if: github.ref == 'refs/heads/master'
         run: echo 'ENVIRONMENT=product' >> $GITHUB_ENV
