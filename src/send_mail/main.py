@@ -54,7 +54,16 @@ def lambda_handler(event, context):
         print(event)
 
         # input
-        input = json.loads(event.get("body", "{}"))
+        # REST APIかHTTP APIかで入力値の取り方が変わるため、両方に対応させる
+        if event.get("body", None) is not None:
+            input = json.loads(event.get("body", "{}"))
+        else:
+            input = {
+                "name": event["name"],
+                "email": event["email"],
+                "title": event["title"],
+                "message": event["message"],
+            }
 
         # check
         validate_inquiry_request(input)
@@ -101,9 +110,25 @@ def lambda_handler(event, context):
             raise ("SES Client did not return MessageID. (service -> customer)")
 
         # out
-        # API Gatewayを通すこともありえるので、最初からプロキシ統合のためのLambda関数の出力形式にあわせておく。
         # https://docs.aws.amazon.com/ja_jp/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-output-format
-        return {"statusCode": 200, "body": result}
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Origin": os.environ["CORS_ALLOW_ORIGIN"],
+                "Access-Control-Allow-Methods": "OPTIONS,POST",
+            },
+            "body": json.dumps("process is successful."),
+        }
+
     except Exception as e:
         print({"type": type(e), "error": e})
-        return {"statusCode": 500, "body": "process is terminated abnormally..."}
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Origin": os.environ["CORS_ALLOW_ORIGIN"],
+                "Access-Control-Allow-Methods": "OPTIONS,POST",
+            },
+            "body": json.dumps("process is terminated abnormally..."),
+        }
