@@ -1,0 +1,9 @@
+###### Requirements without Version Specifiers ######`
+# for local / develop / unit test
+cerberus
+email_validator
+boto3
+pytest
+pytest-cov
+pytest-mock
+python-lambda-local

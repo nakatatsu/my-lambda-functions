@@ -1,11 +1,6 @@
 name: send_mail CI/CD
 on:
   workflow_dispatch:
-    inputs:
-      env:
-        description: "environment"
-        required: true
-        default: "staging"
       
   # 要件1. masterにプルリクがマージされると起動する。
   push:
@@ -18,14 +13,18 @@ on:
       - 'src/send_mail/*.txt'
 
 env:
-  BUCKET_NAME : "${{ secrets.BUCKET_NAME }}"
-  AWS_REGION : "ap-northeast-1"
-  OS : "ubuntu-22.04"
-  AWS_ROLE_ARN: "${{ secrets.AWS_ROLE_ARN }}"
+  AWS_REGION: "ap-northeast-1"
+  AWS_PRODUCT_ROLE_ARN: "${{ secrets.AWS_PRODUCT_ROLE_ARN }}"
+  AWS_STAGING_ROLE_ARN: "${{ secrets.AWS_STAGING_ROLE_ARN }}"
+
+# AWS OpenID Connect用
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  test:
-    runs-on: ${{ env.OS }}
+  test-and-deploy:
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version: ["3.9"]
@@ -50,35 +49,51 @@ jobs:
       - name: Test with pytest
         run: |
           pytest
-  deploy:
-    runs-on: ${{ env.OS }}
-    strategy:
-      matrix:
-        python-version: ["3.9"]
-    steps:
-      - uses: actions/checkout@v3
-      - name: aws-credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      # product
+      - uses: aws-actions/configure-aws-credentials@v1
+        if: endsWith(github.ref, '/main')
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_PRODUCT_ROLE_ARN }}
+          aws-region:  ${{ env.AWS_REGION }}
+      # staging
+      - uses: aws-actions/configure-aws-credentials@v1
+        if: contains(github.ref, 'feature')
+        with:
+          role-to-assume: ${{ env.AWS_STAGING_ROLE_ARN }}
+          aws-region:  ${{ env.AWS_REGION }}
+      - run: aws sts get-caller-identity
+      # アクセスキーを使うならこちら
+      # - name: aws-credentials
+      #   uses: aws-actions/configure-aws-credentials@v1
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ env.AWS_REGION }}
+      - name: set env(product)
+        if: endsWith(github.ref, '/main')
+        run: echo 'ENVIRONMENT=product' >> $GITHUB_ENV
+      - name: set env(staging)
+        if: contains(github.ref, 'feature')
+        run: echo 'ENVIRONMENT=staging' >> $GITHUB_ENV
       # 要件5. アップロードすべきファイルをZipで圧縮し、S3にPUTする。
       # 要件6. Lambda関数にアップロードする。関数バージョンも同時に作成する。
       # 要件7. エイリアスをLATESTに更新する。
       - name: deploy to lambda
-        run: cd src/send_mail && bash ./upload.sh product
+        run: cd src/send_mail && bash ./upload.sh $ENVIRONMENT
       # 要件8. 結果を通知する。
       - name: Slack notification of success
         uses: rtCamp/action-slack-notify@v2.2.0
         env:
           SLACK_COLOR: good 
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-      # 要件ex. 失敗した場合、失敗を通知する。
-  # on-error:
-  #   name: Slack notification of failure
-  #   if: failure()
-  #   uses: rtCamp/action-slack-notify@v2.2.0
-  #   env:
-  #     SLACK_COLOR: danger
-  #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deploy success.'
+          SLACK_TITLE: GitHub Actions Notification
+      # ※ 失敗でも通知する
+      - name: Slack notification of failure
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2.2.0
+        env:
+          SLACK_COLOR: danger
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_MESSAGE: 'Deploy failed...'
+          SLACK_TITLE: GitHub Actions Notification
