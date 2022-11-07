@@ -14,7 +14,8 @@ on:
 
 env:
   AWS_REGION: "ap-northeast-1"
-  AWS_ROLE_ARN: "${{ secrets.AWS_ROLE_ARN }}"
+  AWS_PRODUCT_ROLE_ARN: "${{ secrets.AWS_PRODUCT_ROLE_ARN }}"
+  AWS_STAGING_ROLE_ARN: "${{ secrets.AWS_STAGING_ROLE_ARN }}"
 
 # AWS OpenID Connect用
 permissions:
@@ -48,10 +49,17 @@ jobs:
       - name: Test with pytest
         run: |
           pytest
-      # この指定方法だと同じRoleしか使えないので、こちらも環境に応じたRoleを指定する必要あり
+      # product
       - uses: aws-actions/configure-aws-credentials@v1
+        if: endsWith(github.ref, '/main')
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_PRODUCT_ROLE_ARN }}
+          aws-region:  ${{ env.AWS_REGION }}
+      # staging
+      - uses: aws-actions/configure-aws-credentials@v1
+        if: contains(github.ref, 'feature')
+        with:
+          role-to-assume: ${{ env.AWS_STAGING_ROLE_ARN }}
           aws-region:  ${{ env.AWS_REGION }}
       - run: aws sts get-caller-identity
       # アクセスキーを使うならこちら
@@ -62,7 +70,7 @@ jobs:
       #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       #     aws-region: ${{ env.AWS_REGION }}
       - name: set env(product)
-        if: github.ref == 'refs/heads/master'
+        if: endsWith(github.ref, '/main')
         run: echo 'ENVIRONMENT=product' >> $GITHUB_ENV
       - name: set env(staging)
         if: contains(github.ref, 'feature')
