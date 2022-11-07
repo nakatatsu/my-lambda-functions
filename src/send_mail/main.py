@@ -6,6 +6,8 @@ import boto3
 from cerberus import Validator
 from email_validator import EmailNotValidError, validate_email
 
+import settings
+
 
 def is_email(field, value, error) -> None:
     try:
@@ -48,6 +50,26 @@ def validate_inquiry_request(request: any) -> None:
         raise TypeError(v.errors)
 
 
+def response(statusCode: int, body: string) -> None:
+    # https://docs.aws.amazon.com/ja_jp/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-output-format
+    return {
+        "statusCode": statusCode,
+        "headers": {
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Origin": os.environ["CORS_ALLOW_ORIGIN"],
+            "Access-Control-Allow-Methods": "OPTIONS,POST",
+        },
+        "body": body,
+    }
+
+
+def get_secrets(secret_name: str, region_name: str) -> string:
+    session = boto3.session.Session()
+    client = session.client(service_name="secretsmanager", region_name=region_name)
+    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+    return get_secret_value_response["SecretString"]
+
+
 def lambda_handler(event, context):
     try:
         # logging
@@ -69,14 +91,19 @@ def lambda_handler(event, context):
         validate_inquiry_request(input)
 
         # logic
+        admin_mail_address = get_secrets(settings.mail_secret_key, settings.secrets_manager_region)
+
+        # ※ 公開リポジトリにメールアドレスを公開したくなかったのでSecretsManagerを使っているが、
+        # Privateリポジトリで使うならこんなことをせずに設定ファイルにメールアドレスを書き込むだけで十分。
+
         sesClient = boto3.client("ses", region_name=os.environ["REGION"])
 
         # 本メール(customer -> administrator)送信
         result = send_email(
             sesClient,
-            os.environ["SERVICE_ADMIN_MAIL"],
+            admin_mail_address,
             "%s <%s>" % (input["name"], input["email"]),
-            os.environ["SERVICE_ADMIN_MAIL"],
+            admin_mail_address,
             input["title"],
             input["message"],
         )
@@ -88,47 +115,29 @@ def lambda_handler(event, context):
             template = string.Template(file.read())
             confirm_message = template.safe_substitute(
                 {
-                    "name": os.environ["SERVICE_NAME"],
+                    "name": settings.service_name,
                     "sender_name": input["name"],
                     "source": input["email"],
                     "subject": input["title"],
                     "body": input["message"],
-                    "site_url": os.environ["SERVICE_URL"],
-                    "mail": os.environ["SERVICE_ADMIN_MAIL"],
+                    "site_url": settings.service_url,
+                    "mail": admin_mail_address,
                 }
             )
 
         result = send_email(
             sesClient,
-            os.environ["SERVICE_ADMIN_MAIL"],
-            os.environ["SERVICE_ADMIN_MAIL"],
+            admin_mail_address,
+            admin_mail_address,
             input["email"],
-            os.environ["REPLY_TITLE"],
+            settings.mail_reply_title,
             confirm_message,
         )
         if result.get("MessageId") is None:
             raise ("SES Client did not return MessageID. (service -> customer)")
 
-        # out
-        # https://docs.aws.amazon.com/ja_jp/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-output-format
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Allow-Origin": os.environ["CORS_ALLOW_ORIGIN"],
-                "Access-Control-Allow-Methods": "OPTIONS,POST",
-            },
-            "body": json.dumps("process is successful."),
-        }
+        return response(200, json.dumps("process is successful."))
 
     except Exception as e:
         print({"type": type(e), "error": e})
-        return {
-            "statusCode": 500,
-            "headers": {
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Allow-Origin": os.environ["CORS_ALLOW_ORIGIN"],
-                "Access-Control-Allow-Methods": "OPTIONS,POST",
-            },
-            "body": json.dumps("process is terminated abnormally..."),
-        }
+        return response(500, json.dumps("process is terminated abnormally..."))

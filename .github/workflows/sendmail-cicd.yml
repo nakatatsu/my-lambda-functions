@@ -48,6 +48,7 @@ jobs:
       - name: Test with pytest
         run: |
           pytest
+      # この指定方法だと同じRoleしか使えないので、こちらも環境に応じたRoleを指定する必要あり
       - uses: aws-actions/configure-aws-credentials@v1
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
